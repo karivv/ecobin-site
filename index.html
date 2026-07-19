@@ -2062,7 +2062,7 @@ footer p{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var
 #euSec *,#euSec *::before,#euSec *::after{box-sizing:border-box}
 
 #euSec{position:relative}
-.eu-sticky{position:sticky;top:0;height:100vh;height:100svh;display:grid;grid-template-columns:minmax(300px,38%) 1fr;align-items:center;overflow:hidden}
+.eu-sticky{position:sticky;top:0;height:100vh;height:100svh;transform:translateZ(0);backface-visibility:hidden;display:grid;grid-template-columns:minmax(300px,38%) 1fr;align-items:center;overflow:hidden}
 #euStage{position:absolute;inset:0;z-index:0}
 #euStage canvas{display:block;width:100%;height:100%}
 .eu-copy{position:relative;z-index:2;padding:clamp(28px,4vw,54px) clamp(24px,5vw,72px);
@@ -2939,9 +2939,11 @@ function euInitUrn(){
   /* высота фиксируется в пикселях один раз: адресная строка её больше не меняет */
   const stickyEl=sec.querySelector('.eu-sticky');
   let VH=0, lastW=innerWidth;
+  let SEC_TOP=0;
   function layout(){
     VH = stickyEl.getBoundingClientRect().height || innerHeight;
     sec.style.height = (S.length*VH)+'px';
+    SEC_TOP = sec.getBoundingClientRect().top + (window.pageYOffset||document.documentElement.scrollTop||0);
   }
   layout();
 
@@ -2958,19 +2960,23 @@ function euInitUrn(){
   }
 
   function onScroll(){
-    const r=sec.getBoundingClientRect();
-    const total=sec.offsetHeight-VH;
+    const total=(S.length*VH)-VH;
     if (total<=0) return;
-    const raw=Math.min(Math.max(-r.top/total,0),1)*S.length;
+    const sy=window.pageYOffset||document.documentElement.scrollTop||0;
+    const raw=Math.min(Math.max((sy-SEC_TOP)/total,0),1)*S.length;
     const cand=Math.min(Math.floor(raw),S.length-1);
     if (cand>idx && raw>=idx+1+HYS) setStep(cand);
     else if (cand<idx && raw<=idx-HYS) setStep(cand);
   }
   addEventListener('scroll',onScroll,{passive:true});
 
+  const RES = LOW ? 0.72 : 1;              /* на телефоне рисуем мельче и растягиваем */
   function resize(){
     const w=stage.clientWidth,h=stage.clientHeight;
-    cam.aspect=w/h; cam.updateProjectionMatrix(); rend.setSize(w,h);
+    cam.aspect=w/h; cam.updateProjectionMatrix();
+    rend.setSize(Math.round(w*RES), Math.round(h*RES), false);
+    rend.domElement.style.width='100%';
+    rend.domElement.style.height='100%';
   }
   /* пересчитываем только при смене ширины: изменение высоты — это адресная строка */
   addEventListener('resize',function(){
@@ -2992,11 +2998,21 @@ function euInitUrn(){
   function frame(now){
     requestAnimationFrame(frame);
     if (!onScreen) { prevT=now; return; }
+    if (LOW && now-prevT < 30) return;      /* на телефоне держим около 30 кадров */
     const dt=Math.min((now-(prevT||now))/16.667, 3);   /* доля кадра при 60 Гц */
     prevT=now;
-    const t=S[idx];
-    const kf=1-Math.pow(1-.065, dt);                   /* сглаживание не зависит от частоты */
-    for (const k in t) cur[k]=lerp(cur[k],t[k],kf);
+
+    /* цель сцены — плавная смесь двух соседних состояний по позиции прокрутки */
+    const sy=window.pageYOffset||document.documentElement.scrollTop||0;
+    const tot=(S.length*VH)-VH;
+    const sp=tot>0 ? Math.min(Math.max((sy-SEC_TOP)/tot,0),1) : 0;
+    const prog=sp*(S.length-1);
+    const i0=Math.min(Math.floor(prog),S.length-1);
+    const i1=Math.min(i0+1,S.length-1);
+    let f=prog-i0; f=f*f*(3-2*f);                      /* мягкий вход и выход */
+    const A=S[i0], B=S[i1];
+    const kf=1-Math.pow(1-.12, dt);                    /* демпфер поверх смеси */
+    for (const k in A) cur[k]=lerp(cur[k], A[k]+(B[k]-A[k])*f, kf);
 
     if (idx===4) runFinal(now);
     P.hinge.rotation.x = idx===4 ? cur.lid - 1.15*FIN.lidT : cur.lid;
