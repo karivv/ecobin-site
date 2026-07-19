@@ -2980,13 +2980,23 @@ function euInitUrn(){
   addEventListener('orientationchange',function(){ setTimeout(function(){ layout(); resize(); onScroll(); },300); });
   resize(); onScroll();
 
+  const TAGS_HIDDEN = matchMedia('(max-width:900px)').matches;
   const v=new THREE.Vector3();
   const lerp=(a,b,t)=>a+(b-a)*t;
 
+  let onScreen=true, prevT=0;
+  if ('IntersectionObserver' in window){
+    new IntersectionObserver(function(es){ onScreen=es[0].isIntersecting; },{threshold:0}).observe(sec);
+  }
+
   function frame(now){
     requestAnimationFrame(frame);
+    if (!onScreen) { prevT=now; return; }
+    const dt=Math.min((now-(prevT||now))/16.667, 3);   /* доля кадра при 60 Гц */
+    prevT=now;
     const t=S[idx];
-    for (const k in t) cur[k]=lerp(cur[k],t[k],.065);
+    const kf=1-Math.pow(1-.065, dt);                   /* сглаживание не зависит от частоты */
+    for (const k in t) cur[k]=lerp(cur[k],t[k],kf);
 
     if (idx===4) runFinal(now);
     P.hinge.rotation.x = idx===4 ? cur.lid - 1.15*FIN.lidT : cur.lid;
@@ -3060,14 +3070,26 @@ function euInitUrn(){
     const W2=stage.clientWidth, H2=stage.clientHeight;
     const minX = innerWidth>900 ? W2*.42 : W2*.04;
     const svg=document.getElementById('euTagLines');
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (!svg.dataset.built){
+      const NS='http://www.w3.org/2000/svg';
+      TAGS.forEach(function(tg){
+        tg.line=document.createElementNS(NS,'line');
+        tg.dot=document.createElementNS(NS,'circle');
+        tg.dot.setAttribute('r','2.5'); tg.dot.setAttribute('fill','#3FB682');
+        tg.line.style.display='none'; tg.dot.style.display='none';
+        svg.appendChild(tg.line); svg.appendChild(tg.dot);
+      });
+      svg.dataset.built='1';
+    }
+    if (TAGS_HIDDEN){ rend.render(scene,cam); return; }
+    TAGS.forEach(function(tg){ tg.line.style.display='none'; tg.dot.style.display='none'; });
     const want=[];
     TAGS.forEach(tg=>{
       if (!tg.el.classList.contains('eu-on')){ return; }
       tg.obj.getWorldPosition(v).add(tg.v).project(cam);
       if (v.z>1 || v.x<-1.4 || v.x>1.4 || v.y<-1.4 || v.y>1.4){ tg.el.style.opacity='0'; return; }
       tg.el.style.opacity='';
-      want.push({el:tg.el,
+      want.push({el:tg.el, line:tg.line, dot:tg.dot,
         ax:(v.x*.5+.5)*W2, ay:(-v.y*.5+.5)*H2,
         x:Math.max(minX, Math.min((v.x*.5+.5)*W2+24, W2-210)),
         y:(-v.y*.5+.5)*H2-18});
@@ -3081,14 +3103,10 @@ function euInitUrn(){
       if (y-prev < GAP2) y = Math.min(prev+GAP2, H2-70);
       prev=y;
       w.el.style.left=w.x+'px'; w.el.style.top=y+'px';
-      const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
-      ln.setAttribute('x1',w.ax); ln.setAttribute('y1',w.ay);
-      ln.setAttribute('x2',w.x-15); ln.setAttribute('y2',y+22);
-      svg.appendChild(ln);
-      const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      dot.setAttribute('cx',w.ax); dot.setAttribute('cy',w.ay); dot.setAttribute('r','2.5');
-      dot.setAttribute('fill','#3FB682');
-      svg.appendChild(dot);
+      w.line.setAttribute('x1',w.ax.toFixed(1)); w.line.setAttribute('y1',w.ay.toFixed(1));
+      w.line.setAttribute('x2',(w.x-15).toFixed(1)); w.line.setAttribute('y2',(y+22).toFixed(1));
+      w.dot.setAttribute('cx',w.ax.toFixed(1)); w.dot.setAttribute('cy',w.ay.toFixed(1));
+      w.line.style.display=''; w.dot.style.display='';
     });
 
     rend.render(scene,cam);
