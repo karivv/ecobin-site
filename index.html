@@ -2062,7 +2062,7 @@ footer p{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var
 #euSec *,#euSec *::before,#euSec *::after{box-sizing:border-box}
 
 #euSec{position:relative}
-.eu-sticky{position:sticky;top:0;height:100vh;height:100dvh;display:grid;grid-template-columns:minmax(300px,38%) 1fr;align-items:center;overflow:hidden}
+.eu-sticky{position:sticky;top:0;height:100vh;height:100svh;display:grid;grid-template-columns:minmax(300px,38%) 1fr;align-items:center;overflow:hidden}
 #euStage{position:absolute;inset:0;z-index:0}
 #euStage canvas{display:block;width:100%;height:100%}
 .eu-copy{position:relative;z-index:2;padding:clamp(28px,4vw,54px) clamp(24px,5vw,72px);
@@ -2936,28 +2936,49 @@ function euInitUrn(){
   const sec=document.getElementById('euSec');
   const stepEls=[...sec.querySelectorAll('.eu-step')];
   const dots=[...document.getElementById('euProg').children];
-  sec.style.height=(S.length*100)+'vh';
+  /* высота фиксируется в пикселях один раз: адресная строка её больше не меняет */
+  const stickyEl=sec.querySelector('.eu-sticky');
+  let VH=0, lastW=innerWidth;
+  function layout(){
+    VH = stickyEl.getBoundingClientRect().height || innerHeight;
+    sec.style.height = (S.length*VH)+'px';
+  }
+  layout();
+
   let idx=0;
+  const HYS=0.14;                       /* зона нечувствительности у границы шага */
+
+  function setStep(i){
+    idx=i;
+    if (i===4) { resetFinal(); FIN.t0=performance.now(); }
+    else { resetFinal(); }
+    stepEls.forEach((e,j)=>e.classList.toggle('eu-on',j===i));
+    dots.forEach((d,j)=>d.classList.toggle('eu-on',j<=i));
+    TAGS.forEach(t=>t.el.classList.toggle('eu-on',t.steps.includes(i)));
+  }
 
   function onScroll(){
     const r=sec.getBoundingClientRect();
-    const p=Math.min(Math.max(-r.top/(sec.offsetHeight-innerHeight),0),1);
-    const i=Math.min(Math.floor(p*S.length),S.length-1);
-    if (i!==idx){
-      idx=i;
-      if (i===4) { resetFinal(); FIN.t0=performance.now(); }
-      else { resetFinal(); }
-      stepEls.forEach((e,j)=>e.classList.toggle('eu-on',j===i));
-      dots.forEach((d,j)=>d.classList.toggle('eu-on',j<=i));
-      TAGS.forEach(t=>t.el.classList.toggle('eu-on',t.steps.includes(i)));
-    }
+    const total=sec.offsetHeight-VH;
+    if (total<=0) return;
+    const raw=Math.min(Math.max(-r.top/total,0),1)*S.length;
+    const cand=Math.min(Math.floor(raw),S.length-1);
+    if (cand>idx && raw>=idx+1+HYS) setStep(cand);
+    else if (cand<idx && raw<=idx-HYS) setStep(cand);
   }
   addEventListener('scroll',onScroll,{passive:true});
+
   function resize(){
     const w=stage.clientWidth,h=stage.clientHeight;
     cam.aspect=w/h; cam.updateProjectionMatrix(); rend.setSize(w,h);
   }
-  addEventListener('resize',resize); resize(); onScroll();
+  /* пересчитываем только при смене ширины: изменение высоты — это адресная строка */
+  addEventListener('resize',function(){
+    resize();
+    if (innerWidth!==lastW){ lastW=innerWidth; layout(); onScroll(); }
+  });
+  addEventListener('orientationchange',function(){ setTimeout(function(){ layout(); resize(); onScroll(); },300); });
+  resize(); onScroll();
 
   const v=new THREE.Vector3();
   const lerp=(a,b,t)=>a+(b-a)*t;
