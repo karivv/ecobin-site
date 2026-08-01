@@ -809,6 +809,8 @@ body{
   line-height:1.5;
 }
 img{display:block;max-width:100%}
+
+
 ::selection{background:var(--mint);color:#04140D}
 
 /* ── type scale ─────────────────────────── */
@@ -1730,6 +1732,10 @@ img{display:block;max-width:100%;height:auto}
 </style>
 </head>
 <body>
+<script>
+/* Телефон: экономим на тайлах карт — их загрузка во время прокрутки даёт рывки. */
+window.LOWNET = matchMedia('(max-width:900px)').matches;
+</script>
 
 <nav class="topbar" id="topbar">
   <div class="tb-brand">
@@ -3602,13 +3608,21 @@ function init(){
   }
 
   function makeMap(id){
-    var m=L.map(id,{zoomControl:false,scrollWheelZoom:false,attributionControl:true});
-    /* спутниковый снимок города */
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {attribution:'&copy; Esri, Maxar, Earthstar Geographics',maxZoom:19}).addTo(m);
-    /* поверх — названия улиц, чтобы место читалось */
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-      {attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,opacity:.9}).addTo(m);
+    var m=L.map(id,{zoomControl:false,scrollWheelZoom:false,attributionControl:true,preferCanvas:true});
+    /* На телефоне спутник и отдельный слой подписей — это две загрузки тайлов
+       на одну карту, из-за них дёргается прокрутка. Там берём один тёмный слой. */
+    if (LOWNET){
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        {attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd',
+         detectRetina:false, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:0}).addTo(m);
+    } else {
+      /* спутниковый снимок города */
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {attribution:'&copy; Esri, Maxar, Earthstar Geographics',maxZoom:19, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:0}).addTo(m);
+      /* поверх — названия улиц, чтобы место читалось */
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
+        {attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,opacity:.9, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:0}).addTo(m);
+    }
     L.control.zoom({position:'bottomright'}).addTo(m);
     return m;
   }
@@ -4183,8 +4197,10 @@ var ECOIMG=["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAwICQsJCAwL
           boxZoom:false, keyboard:false, tap:false
         }).setView([41.316, 69.279], 12);
 
-        var pTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          {maxZoom:19, subdomains:'abcd', detectRetina:true});
+        var pTiles = L.tileLayer(LOWNET
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+          : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+          {maxZoom:19, subdomains:'abcd', detectRetina:!LOWNET, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:0});
         pTiles.on('tileerror', function(){ phoneMapEl.classList.add('tiles-off'); });
         pTiles.addTo(pm);
 
@@ -4385,6 +4401,7 @@ var ECOIMG=["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAwICQsJCAwL
 
         var touch = matchMedia('(pointer:coarse)').matches;
         var map = L.map(mapEl, {
+          preferCanvas:true,
           scrollWheelZoom:false,
           attributionControl:false,
           dragging: !touch,
@@ -4402,8 +4419,10 @@ var ECOIMG=["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAwICQsJCAwL
         } else if(shell){
           shell.classList.add('unlocked');
         }
-        var bTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-          {maxZoom:19, subdomains:'abcd', detectRetina:true});
+        var bTiles = L.tileLayer(LOWNET
+          ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'
+          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+          {maxZoom:19, subdomains:'abcd', detectRetina:!LOWNET, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:0});
         bTiles.on('tileerror', function(){ mapEl.classList.add('tiles-off'); });
         bTiles.addTo(map);
         map.on('click', function(){ map.scrollWheelZoom.enable(); });
